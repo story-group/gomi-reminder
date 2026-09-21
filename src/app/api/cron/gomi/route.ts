@@ -13,10 +13,7 @@ import {
  * 日次バッチ(Vercel Cron から毎日21時ごろ = 12:00 UTC に呼び出し)。
  * 「前日夜に翌日分を通知する」運用のため、基準日は常に(JSTでの)翌日を使う。
  * 収集対象があれば TELEGRAM_GOMI_CHAT_ID 宛にリマインドを送り、無ければ何もしない。
- *
- * therapist_management_system / story-diary-tracker と同じ
- * Next.js + Vercel Cron + Telegram Bot の構成。収集日は固定ルールのため
- * スクレイピングやDBは持たず、日付計算だけで完結する。
+ * 収集日は固定ルールのため、DBは持たず日付計算だけで完結する。
  *
  * テスト用クエリ:
  *   ?date=YYYY-MM-DD … 対象日を固定

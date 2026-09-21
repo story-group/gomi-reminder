@@ -1,36 +1,78 @@
-# ゴミ出しリマインダー（西新宿7・8丁目）
+# ゴミ出しリマインダー
 
-翌日の資源ごみ・燃やすごみ・金属陶器ガラスごみを、**前日21時ごろに Telegram へ通知**する
-バッチシステム。収集対象が無い日は何も送りません。
+西新宿7・8丁目のゴミ収集日を、前日の夜にTelegramでお知らせするシステムです。
 
-`therapist_management_system`（検査結果管理くん）/ `story-diary-tracker`（写メ日記トラッカー）と
-同じ **Next.js + Vercel Cron + Telegram Bot** 構成です。ただし収集日は固定ルールなので、
-Supabase・スクレイピング・Webhookコマンドは持たず、日付計算だけで完結します。
+毎日21時ごろに翌日の収集予定を判定し、出せるゴミがある日だけTelegramに通知します。
+ゴミの出し忘れを防ぐためのものです。
 
-| ゴミ | 収集 | 通知が飛ぶ日（前日21時ごろ） |
+**ver 1.0**
+
+---
+
+## 1. できること
+
+### 毎日の自動通知
+
+毎日 **21:00（日本時間）** に自動実行され、**翌日に出せるゴミ**があればTelegramに通知します。
+
+| ゴミの種類 | 収集日 | 通知が届く日（前日21時ごろ） |
 | --- | --- | --- |
 | 燃やすごみ | 月・木 | 日曜・水曜 |
 | 資源ごみ | 火 | 月曜 |
 | 金属・陶器・ガラスごみ | 第2・第4 水曜 | 第2・第4 火曜 |
 
-## セットアップ
+```
+🗑 あすのゴミ出し(9/24 木)
 
-### 1. Telegram Bot を作る
+・燃やすごみ
 
-このシステム専用の bot を新規に作る（写メ日記トラッカーとは別 bot）。
+朝8時までに出してください
+```
 
-1. Telegram で **@BotFather** → `/newbot` → 名前とユーザー名を決める
-2. 発行された **トークン**（`123456789:AA...`）を控える
-3. 送信先を用意する:
-   - 個人チャットに送るなら、その bot に何か1通送信
-   - 専用グループに送るなら、その bot をグループに招待して何か発言
-4. chat_id を調べる（専用 bot は webhook 未登録なので `getUpdates` が使える）:
-   ```bash
-   curl "https://api.telegram.org/bot<token>/getUpdates"
-   ```
-   レスポンスの `result[].message.chat.id` が送信先（グループは `-100...`）
+- 収集が無い日（金曜・土曜の夜など）は何も送りません
+- 金属・陶器・ガラスごみは第2・第4水曜だけが対象です（第1・第3・第5水曜は通知しません）
 
-### 2. 環境変数
+### 異常時のアラート
+
+Telegramへの送信に失敗した場合、`TELEGRAM_STAFF_ALERT_CHAT_ID` に設定したTelegramの宛先にエラーを通知します。
+
+---
+
+## 2. 構成
+
+| 要素 | 役割 |
+| --- | --- |
+| Vercel | アプリ本体の稼働場所。毎日21:00のスケジュール実行（Cron）もここで行う |
+| Telegram Bot | リマインドの送信 |
+
+収集日は決まったルールなので、**データベースは使わず、日付の計算だけで判定**しています。
+外部サイトの読み取りもしていないため、外部の変更で動かなくなる心配はありません。
+収集ルールが変わったときだけ、`src/lib/gomiSchedule.ts` の修正が必要です（6章参照）。
+
+---
+
+## 3. セットアップ手順
+
+> すでに稼働中の環境を引き継ぐ場合は、この章の作業は不要です。
+> 別のアカウントへ移行する場合や、環境を作り直す場合にこの手順を実施してください。
+
+### 3.1 Telegram Bot
+
+1. Telegramで `@BotFather` に `/newbot` を送り、案内に従ってBotを作成してトークンを取得する
+2. 通知の送り先を用意する
+   - **グループに送る場合**：Botをグループに招待し、グループで `/start` と送信する（`/` で始まらないメッセージはBotに届かない仕様のため）
+   - **個人チャットに送る場合**：Botとのチャットを開いて何か1通送信する
+3. 以下にアクセスし、`"chat":{"id":…}` の数値（送り先のchat_id。グループは `-100…` の形）を控える
+
+```bash
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getUpdates"
+```
+
+このシステムは通知を送るだけで、Telegramからのコマンドは受け付けません。そのためWebhookの登録は不要です。
+
+### 3.2 環境変数
+
+`.env.local.example` をコピーして `.env.local` を作成し、値を設定します。
 
 ```bash
 cp .env.local.example .env.local
@@ -38,56 +80,96 @@ cp .env.local.example .env.local
 
 | 変数 | 説明 |
 | --- | --- |
-| `TELEGRAM_BOT_TOKEN` | このシステム専用 bot のトークン |
-| `TELEGRAM_GOMI_CHAT_ID` | リマインドの送信先 chat_id（自分との個人チャット or グループ） |
-| `TELEGRAM_STAFF_ALERT_CHAT_ID` | 送信失敗時のアラート先（任意） |
-| `CRON_SECRET` | `/api/cron/gomi` を Vercel Cron 以外から叩かれないための秘密文字列（任意の長い文字列） |
+| `TELEGRAM_BOT_TOKEN` | BotのAPIトークン |
+| `TELEGRAM_GOMI_CHAT_ID` | リマインドの送り先のchat_id |
+| `TELEGRAM_STAFF_ALERT_CHAT_ID` | 送信失敗時のアラート送信先（任意） |
+| `CRON_SECRET` | 日次バッチの認証用シークレット（任意のランダム文字列） |
 
-### 3. ローカル動作確認
+Vercelにデプロイする場合は、同じ変数をVercelの Settings > Environment Variables にも登録します。
+
+### 3.3 デプロイ
 
 ```bash
 npm install
-npm run dev
+npx vercel --prod
 ```
 
-別ターミナルで（`<secret>` は `.env.local` の `CRON_SECRET`）:
+`vercel.json` にスケジュール設定を含めているため、デプロイすると毎日 **12:00 UTC（= 21:00 日本時間）** の実行が自動的に登録されます。
+
+> Vercelの無料（Hobby）プランはCronが1日1回までの制限があり、実行時刻も指定時刻から数十分ずれることがあります。
+> 時刻の正確さが必要な場合はProプランへの変更を検討してください。
+
+---
+
+## 4. 動作確認・手動実行
+
+スケジュールを待たずに判定・送信したい場合は、以下を実行します。末尾に付けるパラメータで動きを変えられます。
+
+| パラメータ | 動き |
+| --- | --- |
+| （なし） | 明日の分を判定し、収集があれば実際に送信する |
+| `?dryRun=1` | 送信せず、判定結果と本文だけを返す |
+| `?date=2026-09-24` | 指定した日の分として判定する |
 
 ```bash
-# 明日の判定（送信せず本文だけ）
-curl -H "Authorization: Bearer <secret>" "http://localhost:3000/api/cron/gomi?dryRun=1"
+# 明日の判定を、送信せずに確認する
+curl -H "Authorization: Bearer <CRON_SECRET>" "https://<デプロイ先のドメイン>/api/cron/gomi?dryRun=1"
 
-# 日付を固定してロジック確認
-curl -H "Authorization: Bearer <secret>" "http://localhost:3000/api/cron/gomi?date=2026-09-08&dryRun=1"
+# 日付を指定して、送信せずに確認する
+curl -H "Authorization: Bearer <CRON_SECRET>" "https://<デプロイ先のドメイン>/api/cron/gomi?date=2026-09-24&dryRun=1"
 
-# 実際に Telegram へ送る
-curl -H "Authorization: Bearer <secret>" "http://localhost:3000/api/cron/gomi?date=2026-09-08"
+# 日付を指定して、実際にTelegramへ送る
+curl -H "Authorization: Bearer <CRON_SECRET>" "https://<デプロイ先のドメイン>/api/cron/gomi?date=2026-09-24"
 ```
 
-### 4. Vercel へデプロイ
+正常に送信されると、次のようなレスポンスが返ります。
+
+```json
+{"ok":true,"area":"西新宿7・8丁目","date":"2026-09-24","items":["燃やすごみ"],"sent":true}
+```
+
+収集が無い日は `"sent":false` と `"reason":"no-collection"` が返り、何も送信されません。
+
+ローカルで開発する場合は `npm run dev` の後、`http://localhost:3000/api/cron/gomi` に対して同様に実行します。
+
+---
+
+## 5. 開発
 
 ```bash
-npm i -g vercel   # 未導入なら
-vercel            # プロジェクト作成
-vercel --prod
+npm install
+npm run dev     # 開発サーバー起動
+npm run build   # ビルド（型チェック込み）
+npm run lint    # 静的解析
 ```
 
-1. Vercel ダッシュボード → プロジェクト → **Settings → Environment Variables** に
-   `TELEGRAM_BOT_TOKEN` / `TELEGRAM_GOMI_CHAT_ID` / `CRON_SECRET`（＋任意で
-   `TELEGRAM_STAFF_ALERT_CHAT_ID`）を登録
-2. もう一度 `vercel --prod` で反映
-3. `vercel.json` の Cron（`0 12 * * *` = 21:00 JST）が自動登録される。
-   ダッシュボードの **Settings → Cron Jobs** で確認できる
+### ディレクトリ構成（抜粋）
 
-## 運用スケジュール
+```
+src/lib/
+  gomiSchedule.ts                        収集ルールの定義と、通知本文の組み立て
+  telegramSend.ts                        Telegram送信
 
-- Vercel Cron が毎日 **12:00 UTC（= 21:00 JST）** に `/api/cron/gomi` を1回叩く
-- ルートは常に「JSTの翌日」を基準日とし、収集があれば通知、無ければ 200 で `reason: "no-collection"` を返す
-- **Vercel Hobby プランの Cron は指定時刻ちょうどには実行されず、数十分程度ズレることがある**
-  （`story-diary-tracker` で実測29分遅れ）。日次リマインドの用途では許容する方針。
-  正確な時刻が要るなら Pro プラン、または外部 Cron（cron-job.org 等）から
-  `Authorization` ヘッダ付きで `/api/cron/gomi` を叩く構成に切り替える
+src/app/api/cron/gomi/route.ts           日次バッチ本体（毎日21:00に自動実行）
+vercel.json                              スケジュール設定
+```
 
-## 収集日が変わったら
+---
 
-`src/lib/gomiSchedule.ts` の `gomiForDate()` を編集。曜日は `0=日 … 6=土`、
-`nthWeekdayOfMonth()` はその曜日が月内で何回目か（1〜5）を返す。祝日の振替には未対応。
+## 6. 注意事項
+
+- **収集日が変わったとき**
+  `src/lib/gomiSchedule.ts` の `gomiForDate()` を修正し、GitHubにpushしてください（Vercelと連携していれば自動で本番に反映されます）。
+  曜日は `0=日曜 … 6=土曜` の数字で指定します。
+  修正後は `?date=…&dryRun=1` で、いくつかの日付の判定結果を確認してから反映することをおすすめします。
+
+- **祝日・年末年始には対応していません**
+  曜日のルールだけで判定しているため、年末年始や臨時の収集日程の変更は反映されません。
+  区から特別な日程が案内された時期は、別途お知らせしてください。
+
+- **通知は「21時ごろ」です**
+  無料プランのVercelでは実行時刻が数十分ずれることがあります。21時ちょうどには届かない場合があります。
+
+- **シークレット情報の取り扱い**
+  Botトークンは、それ単体でBotを操作できる重要情報です。
+  リポジトリにコミットせず、Vercelの環境変数としてのみ管理してください。

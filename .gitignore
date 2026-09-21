@@ -31,3 +31,7 @@ yarn-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AIコーディングエージェント向けにnext devが自動生成するファイル(成果物ではない)
+AGENTS.md
+CLAUDE.md

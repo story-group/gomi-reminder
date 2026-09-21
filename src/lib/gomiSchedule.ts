@@ -5,8 +5,7 @@ export const AREA = "西新宿7・8丁目";
 /**
  * VercelランタイムはUTCで動くため、「今日 / 明日」の判定はJSTの壁時計に合わせる。
  * toLocaleString で JST の日時文字列を作り、それをサーバーローカルとして解釈し直すことで、
- * 以降の getDate() / getDay() が JST のカレンダー値を返すようにする
- * (story-diary-tracker の jstNow() と同じ手法)。
+ * 以降の getDate() / getDay() が JST のカレンダー値を返すようにする。
  */
 export function jstNow(): Date {
   const now = new Date();
